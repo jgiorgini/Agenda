@@ -472,7 +472,8 @@ let currentTaskType = 'agenda'; // 'agenda' | 'todo'
 let recognition = null;
 let isListening = false;
 let editingTaskId = null;
-let accumulatedText = '';
+let accumulatedText = '';  // texto de la sesión actual
+let committedText = '';    // texto de sesiones anteriores (auto-reinicios)
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -599,8 +600,8 @@ function setupSpeechRecognition() {
         interim += t;
       }
     }
-    // Mostrar texto acumulado + lo que se está diciendo ahora
-    const display = (accumulatedText + interim).trim();
+    // committedText = sesiones previas, accumulatedText = sesión actual, interim = en curso
+    const display = (committedText + accumulatedText + interim).trim();
     document.getElementById('transcriptionText').textContent = display || 'Hablá...';
     document.getElementById('transcriptionText').className = 'text' + (interim ? ' interim' : '');
   };
@@ -620,7 +621,9 @@ function setupSpeechRecognition() {
   // onend: Chrome termina la sesión por silencio → reiniciar si el usuario sigue queriendo
   recognition.onend = () => {
     if (isListening) {
-      // Auto-reinicio transparente (Chrome cortó por silencio)
+      // Guardar texto de esta sesión antes de reiniciar (evita duplicados en Android)
+      committedText += accumulatedText;
+      accumulatedText = '';
       try { recognition.start(); } catch(e) { isListening = false; stopListening(); }
     }
     // Si isListening=false: el usuario ya llamó stopRecording() que procesó el texto
@@ -630,9 +633,10 @@ function setupSpeechRecognition() {
 function stopRecording() {
   // Función dedicada para el botón rojo en el modal — para sin condiciones
   isListening = false;
-  try { recognition.abort(); } catch(e) {}  // abort() más agresivo que stop()
+  try { recognition.abort(); } catch(e) {}
   stopListening();
-  const text = accumulatedText.trim();
+  const text = (committedText + accumulatedText).trim();
+  committedText = '';
   accumulatedText = '';
   if (text) processVoiceInput(text);
 }
@@ -660,9 +664,12 @@ function stopListening() {
   document.getElementById('fabLabel').textContent = 'Dictá una tarea';
   const stopBtn = document.getElementById('stopRecordingBtn');
   if (stopBtn) stopBtn.style.display = 'none';
+  committedText = '';
+  accumulatedText = '';
 }
 
 function openModalForVoice() {
+  committedText = '';
   accumulatedText = '';
   document.getElementById('transcriptionText').textContent = 'Tocá ⏹️ cuando termines de hablar';
   document.getElementById('taskTextInput').value = '';
@@ -1316,13 +1323,4 @@ function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
-}
-
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && !document.getElementById('modalOverlay').classList.contains('open')) { e.preventDefault(); toggleListening(); }
-  if (e.code === 'Escape') closeModal();
-});
-</script>
-</body>
-</html>
+  toastTim
