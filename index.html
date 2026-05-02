@@ -409,7 +409,7 @@
     </div>
 
     <!-- Botón de detener grabación (solo visible mientras escucha) -->
-    <button id="stopRecordingBtn" onclick="toggleListening()" style="display:none; width:100%; padding:14px; background:linear-gradient(135deg,#C62828,#E53935); color:white; border:none; border-radius:14px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:14px; animation:pulse 1.5s infinite; letter-spacing:0.3px;">
+    <button id="stopRecordingBtn" onclick="stopRecording()" style="display:none; width:100%; padding:14px; background:linear-gradient(135deg,#C62828,#E53935); color:white; border:none; border-radius:14px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:14px; animation:pulse 1.5s infinite; letter-spacing:0.3px; z-index:10; position:relative;">
       ⏹️ Detener grabación
     </button>
 
@@ -622,23 +622,27 @@ function setupSpeechRecognition() {
     if (isListening) {
       // Auto-reinicio transparente (Chrome cortó por silencio)
       try { recognition.start(); } catch(e) { isListening = false; stopListening(); }
-      return;
     }
-    // Para manual: procesar texto acumulado (stopListening ya fue llamado en toggleListening)
-    const text = accumulatedText.trim();
-    accumulatedText = '';
-    if (text) processVoiceInput(text);
+    // Si isListening=false: el usuario ya llamó stopRecording() que procesó el texto
   };
+}
+
+function stopRecording() {
+  // Función dedicada para el botón rojo en el modal — para sin condiciones
+  isListening = false;
+  try { recognition.abort(); } catch(e) {}  // abort() más agresivo que stop()
+  stopListening();
+  const text = accumulatedText.trim();
+  accumulatedText = '';
+  if (text) processVoiceInput(text);
 }
 
 function toggleListening() {
   if (!recognition) { openModalManual(); return; }
   if (isListening) {
-    isListening = false; // usuario quiere parar
-    recognition.stop();
-    stopListening();     // ocultar botón inmediatamente, no esperar onend
+    stopRecording();
   } else {
-    isListening = true;  // señalar intención ANTES de start()
+    isListening = true;
     try {
       openModalForVoice();
       recognition.start();
