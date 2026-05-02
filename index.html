@@ -409,14 +409,11 @@
     </div>
 
     <!-- Botón de detener grabación (solo visible mientras escucha) -->
-    <button id="stopRecordingBtn" onclick="recognition && recognition.stop()" style="display:none; width:100%; padding:14px; background:linear-gradient(135deg,#C62828,#E53935); color:white; border:none; border-radius:14px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:14px; animation:pulse 1.5s infinite; letter-spacing:0.3px;">
+    <button id="stopRecordingBtn" onclick="toggleListening()" style="display:none; width:100%; padding:14px; background:linear-gradient(135deg,#C62828,#E53935); color:white; border:none; border-radius:14px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:14px; animation:pulse 1.5s infinite; letter-spacing:0.3px;">
       ⏹️ Detener grabación
     </button>
 
-    <!-- Botón detener (solo visible mientras graba) -->
-    <button id="stopRecordingBtn" onclick="recognition && recognition.stop()" style="display:none;width:100%;padding:14px;background:linear-gradient(135deg,#C62828,#E53935);color:white;border:none;border-radius:14px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:14px;letter-spacing:0.3px;">
-      ⏹️ Detener grabación
-    </button>
+
     <div class="transcription-box" id="transcriptionBox">
       <div class="label">🎤 Reconocido:</div>
       <div class="text" id="transcriptionText">...</div>
@@ -616,20 +613,24 @@ function setupSpeechRecognition() {
     }
   };
 
-  // Al parar (manual o por error): procesar el texto acumulado
+  // onend: si el usuario no detuvo manualmente, reiniciar automáticamente
   recognition.onend = () => {
-    const text = accumulatedText.trim();
-    stopListening();
-    if (text) {
-      processVoiceInput(text);
+    if (isListening) {
+      // Chrome cortó por silencio - reiniciar transparentemente
+      try { recognition.start(); } catch(e) {}
+      return;
     }
+    // El usuario detuvo manualmente: procesar el texto acumulado
+    const text = accumulatedText.trim();
     accumulatedText = '';
+    if (text) processVoiceInput(text);
   };
 }
 
 function toggleListening() {
   if (!recognition) { openModalManual(); return; }
   if (isListening) {
+    isListening = false; // marcar antes de stop() para que onend sepa que fue manual
     recognition.stop();
   } else {
     try { openModalForVoice(); recognition.start(); }
