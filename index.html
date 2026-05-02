@@ -408,6 +408,15 @@
       <button class="type-btn" id="btnTypeTodo" onclick="setTaskType('todo')">☑️ Lista To Do</button>
     </div>
 
+    <!-- Botón de detener grabación (solo visible mientras escucha) -->
+    <button id="stopRecordingBtn" onclick="recognition && recognition.stop()" style="display:none; width:100%; padding:14px; background:linear-gradient(135deg,#C62828,#E53935); color:white; border:none; border-radius:14px; font-size:1rem; font-weight:700; cursor:pointer; margin-bottom:14px; animation:pulse 1.5s infinite; letter-spacing:0.3px;">
+      ⏹️ Detener grabación
+    </button>
+
+    <!-- Botón detener (solo visible mientras graba) -->
+    <button id="stopRecordingBtn" onclick="recognition && recognition.stop()" style="display:none;width:100%;padding:14px;background:linear-gradient(135deg,#C62828,#E53935);color:white;border:none;border-radius:14px;font-size:1rem;font-weight:700;cursor:pointer;margin-bottom:14px;letter-spacing:0.3px;">
+      ⏹️ Detener grabación
+    </button>
     <div class="transcription-box" id="transcriptionBox">
       <div class="label">🎤 Reconocido:</div>
       <div class="text" id="transcriptionText">...</div>
@@ -573,7 +582,10 @@ function setupSpeechRecognition() {
     accumulatedText = '';
     document.getElementById('micBtn').classList.add('listening');
     document.getElementById('micBtn').textContent = '⏹️';
-    document.getElementById('fabLabel').textContent = 'Hablá... (tocá ⏹️ para terminar)';
+    document.getElementById('fabLabel').textContent = 'Grabando...';
+    const sb = document.getElementById('stopRecordingBtn');
+    if (sb) sb.style.display = 'block';
+    document.getElementById('stopRecordingBtn').style.display = 'block';
   };
 
   recognition.onresult = (e) => {
@@ -630,6 +642,8 @@ function stopListening() {
   document.getElementById('micBtn').classList.remove('listening');
   document.getElementById('micBtn').textContent = '🎤';
   document.getElementById('fabLabel').textContent = 'Dictá una tarea';
+  const stopBtn = document.getElementById('stopRecordingBtn');
+  if (stopBtn) stopBtn.style.display = 'none';
 }
 
 function openModalForVoice() {
@@ -1281,22 +1295,16 @@ function scheduleReminderChecks() {
   }
 }
 
-// ========================
-// TOAST
-// ========================
 let toastTimer;
 function showToast(msg) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
+  el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && !document.getElementById('modalOverlay').classList.contains('open')) {
-    e.preventDefault(); toggleListening();
-  }
+  if (e.code === 'Space' && !document.getElementById('modalOverlay').classList.contains('open')) { e.preventDefault(); toggleListening(); }
   if (e.code === 'Escape') closeModal();
 });
 </script>
