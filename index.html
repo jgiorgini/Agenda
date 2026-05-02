@@ -575,14 +575,18 @@ function setupSpeechRecognition() {
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
-    isListening = true;
-    accumulatedText = '';
+    // NO modificar isListening aquí: ese flag es la intención del usuario,
+    // lo setea toggleListening(). onstart puede ser de un auto-reinicio.
+    if (!isListening) {
+      // El usuario ya detuvo mientras se reiniciaba — parar de nuevo
+      recognition.stop();
+      return;
+    }
     document.getElementById('micBtn').classList.add('listening');
-    document.getElementById('micBtn').textContent = '⏹️';
+    document.getElementById('micBtn').textContent = '🎤';
     document.getElementById('fabLabel').textContent = 'Grabando...';
     const sb = document.getElementById('stopRecordingBtn');
     if (sb) sb.style.display = 'block';
-    document.getElementById('stopRecordingBtn').style.display = 'block';
   };
 
   recognition.onresult = (e) => {
@@ -613,14 +617,14 @@ function setupSpeechRecognition() {
     }
   };
 
-  // onend: si el usuario no detuvo manualmente, reiniciar automáticamente
+  // onend: Chrome termina la sesión por silencio → reiniciar si el usuario sigue queriendo
   recognition.onend = () => {
     if (isListening) {
-      // Chrome cortó por silencio - reiniciar transparentemente
-      try { recognition.start(); } catch(e) {}
+      // Auto-reinicio transparente (Chrome cortó por silencio)
+      try { recognition.start(); } catch(e) { isListening = false; stopListening(); }
       return;
     }
-    // El usuario detuvo manualmente: procesar el texto acumulado
+    // Para manual: procesar texto acumulado (stopListening ya fue llamado en toggleListening)
     const text = accumulatedText.trim();
     accumulatedText = '';
     if (text) processVoiceInput(text);
@@ -630,11 +634,18 @@ function setupSpeechRecognition() {
 function toggleListening() {
   if (!recognition) { openModalManual(); return; }
   if (isListening) {
-    isListening = false; // marcar antes de stop() para que onend sepa que fue manual
+    isListening = false; // usuario quiere parar
     recognition.stop();
+    stopListening();     // ocultar botón inmediatamente, no esperar onend
   } else {
-    try { openModalForVoice(); recognition.start(); }
-    catch(e) { showToast('Micrófono no disponible'); }
+    isListening = true;  // señalar intención ANTES de start()
+    try {
+      openModalForVoice();
+      recognition.start();
+    } catch(e) {
+      isListening = false;
+      showToast('Micrófono no disponible');
+    }
   }
 }
 
