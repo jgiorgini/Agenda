@@ -466,6 +466,7 @@ let currentTaskType = 'agenda'; // 'agenda' | 'todo'
 let recognition = null;
 let isListening = false;
 let editingTaskId = null;
+let accumulatedText = '';
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -563,37 +564,55 @@ function setupSpeechRecognition() {
   }
   recognition = new SR();
   recognition.lang = 'es-AR';
-  recognition.continuous = false;
+  recognition.continuous = true;   // sigue escuchando durante pausas
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
     isListening = true;
+    accumulatedText = '';
     document.getElementById('micBtn').classList.add('listening');
     document.getElementById('micBtn').textContent = '⏹️';
-    document.getElementById('fabLabel').textContent = 'Hablá...';
+    document.getElementById('fabLabel').textContent = 'Hablá... (tocá ⏹️ para terminar)';
   };
 
   recognition.onresult = (e) => {
-    let interim = '', final = '';
+    let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) final += t;
-      else interim += t;
+      if (e.results[i].isFinal) {
+        accumulatedText += t + ' ';
+      } else {
+        interim += t;
+      }
     }
-    const current = final || interim;
-    document.getElementById('transcriptionText').textContent = current;
-    document.getElementById('transcriptionText').className = 'text' + (final ? '' : ' interim');
-    if (final) processVoiceInput(final.trim());
+    // Mostrar texto acumulado + lo que se está diciendo ahora
+    const display = (accumulatedText + interim).trim();
+    document.getElementById('transcriptionText').textContent = display || 'Hablá...';
+    document.getElementById('transcriptionText').className = 'text' + (interim ? ' interim' : '');
   };
 
   recognition.onerror = (e) => {
-    stopListening();
-    if (e.error === 'not-allowed') showToast('⚠️ Permiso de micrófono denegado');
-    else if (e.error !== 'aborted') showToast('Error: ' + e.error);
+    if (e.error === 'not-allowed') {
+      stopListening();
+      showToast('⚠️ Permiso de micrófono denegado');
+    } else if (e.error === 'no-speech') {
+      // ignorar — en modo continuo es normal
+    } else if (e.error !== 'aborted') {
+      stopListening();
+      showToast('Error micrófono: ' + e.error);
+    }
   };
 
-  recognition.onend = () => { stopListening(); };
+  // Al parar (manual o por error): procesar el texto acumulado
+  recognition.onend = () => {
+    const text = accumulatedText.trim();
+    stopListening();
+    if (text) {
+      processVoiceInput(text);
+    }
+    accumulatedText = '';
+  };
 }
 
 function toggleListening() {
@@ -614,7 +633,8 @@ function stopListening() {
 }
 
 function openModalForVoice() {
-  document.getElementById('transcriptionText').textContent = 'Escuchando...';
+  accumulatedText = '';
+  document.getElementById('transcriptionText').textContent = 'Tocá ⏹️ cuando termines de hablar';
   document.getElementById('taskTextInput').value = '';
   document.getElementById('taskCategory').value = '';
   setPriority('normal');
