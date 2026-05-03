@@ -370,7 +370,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.4</small>
+      <small>Recordatorios clínicos · v1.5</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -570,68 +570,71 @@ function setupSpeechRecognition() {
     document.getElementById('fabLabel').textContent = 'Sin micrófono';
     return;
   }
-  recognition = new SR();
-  recognition.lang = 'es-AR';
-  recognition.continuous = true;   // sigue escuchando durante pausas
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
 
-  recognition.onstart = () => {
-    // NO modificar isListening aquí: ese flag es la intención del usuario,
-    // lo setea toggleListening(). onstart puede ser de un auto-reinicio.
-    if (!isListening) {
-      // El usuario ya detuvo mientras se reiniciaba — parar de nuevo
-      recognition.stop();
-      return;
-    }
-    document.getElementById('micBtn').classList.add('listening');
-    document.getElementById('micBtn').textContent = '🎤';
-    document.getElementById('fabLabel').textContent = 'Grabando...';
-    const sb = document.getElementById('stopRecordingBtn');
-    if (sb) sb.style.display = 'block';
-  };
+  // Android usa continuous=false (más confiable), desktop usa continuous=true
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-  recognition.onresult = (e) => {
-    let interim = '';
-    // Iterar desde processedFinalCount, NO desde e.resultIndex
-    // Android envía resultIndex=0 en cada evento → causa repeticiones
-    for (let i = processedFinalCount; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        accumulatedText += t + ' ';
-        processedFinalCount = i + 1; // marcar como procesado
-      } else {
-        interim += t;
+  function createRecognition() {
+    const r = new SR();
+    r.lang = 'es-AR';
+    r.continuous = !isMobile;   // false en Android, true en desktop
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+
+    r.onstart = () => {
+      if (!isListening) { r.stop(); return; }
+      document.getElementById('micBtn').classList.add('listening');
+      document.getElementById('fabLabel').textContent = 'Grabando...';
+      const sb = document.getElementById('stopRecordingBtn');
+      if (sb) sb.style.display = 'block';
+    };
+
+    r.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) {
+          accumulatedText += t + ' ';
+        } else {
+          interim += t;
+        }
       }
-    }
-    const display = (committedText + accumulatedText + interim).trim();
-    document.getElementById('transcriptionText').textContent = display || 'Hablá...';
-    document.getElementById('transcriptionText').className = 'text' + (interim ? ' interim' : '');
-  };
+      const display = (accumulatedText + interim).trim();
+      document.getElementById('transcriptionText').textContent = display || 'Hablá...';
+      document.getElementById('transcriptionText').className = 'text' + (interim ? ' interim' : '');
+    };
 
-  recognition.onerror = (e) => {
-    if (e.error === 'not-allowed') {
-      stopListening();
-      showToast('⚠️ Permiso de micrófono denegado');
-    } else if (e.error === 'no-speech') {
-      // ignorar — en modo continuo es normal
-    } else if (e.error !== 'aborted') {
-      stopListening();
-      showToast('Error micrófono: ' + e.error);
-    }
-  };
+    r.onerror = (e) => {
+      if (e.error === 'not-allowed') {
+        stopListening();
+        showToast('⚠️ Permiso de micrófono denegado');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        stopListening();
+        showToast('Error micrófono: ' + e.error);
+      }
+    };
 
-  // onend: Chrome termina la sesión por silencio → reiniciar si el usuario sigue queriendo
-  recognition.onend = () => {
-    if (isListening) {
-      // Guardar texto de esta sesión antes de reiniciar
-      committedText += accumulatedText;
-      accumulatedText = '';
-      processedFinalCount = 0; // nueva sesión = nuevo array de resultados
-      try { recognition.start(); } catch(e) { isListening = false; stopListening(); }
-    }
-    // Si isListening=false: el usuario ya llamó stopRecording() que procesó el texto
-  };
+    r.onend = () => {
+      if (!isListening) return; // parada manual — ya procesó stopRecording()
+
+      if (isMobile) {
+        // Android: onend = terminó la frase → tomar el texto y cerrar
+        isListening = false;
+        stopListening();
+        const text = accumulatedText.trim();
+        accumulatedText = '';
+        if (text) processVoiceInput(text);
+      } else {
+        // Desktop: auto-reiniciar para escucha continua
+        try { recognition.start(); }
+        catch(e) { isListening = false; stopListening(); }
+      }
+    };
+
+    return r;
+  }
+
+  recognition = createRecognition();
 }
 
 function stopRecording() {
