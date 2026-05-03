@@ -363,6 +363,9 @@
   }
   .toast.show { opacity: 1; }
 </style>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -370,7 +373,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.7</small>
+      <small>Recordatorios clínicos · v1.8</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -483,8 +486,9 @@ const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','
 // INIT
 // ========================
 document.addEventListener('DOMContentLoaded', () => {
-  loadTasks();
-  loadTodoItems();
+  loadTasksLocal(); // cargar local primero (UI inmediata)
+  loadTodoItemsLocal();
+  initFirebase();   // luego conectar Firebase (sync en tiempo real)
   setupSpeechRecognition();
   setupServiceWorker();
   checkNotificationPermission();
@@ -493,40 +497,108 @@ document.addEventListener('DOMContentLoaded', () => {
   scheduleReminderChecks();
 });
 
-function loadTasks() {
+// ========================
+// FIREBASE CONFIG
+// ========================
+const firebaseConfig = {
+  apiKey: "AIzaSyBdnVk14BaJjxMtejhWz7XfhjnXgNJq7nc",
+  authDomain: "agenda-40a49.firebaseapp.com",
+  databaseURL: "https://agenda-40a49-default-rtdb.firebaseio.com",
+  projectId: "agenda-40a49",
+  storageBucket: "agenda-40a49.firebasestorage.app",
+  messagingSenderId: "692725419422",
+  appId: "1:692725419422:web:8f95c1e4ffa77d6a6bda8f"
+};
+
+let firebaseApp = null;
+let db = null;
+
+function initFirebase() {
   try {
-    tasks = JSON.parse(localStorage.getItem('agenda_julio_tasks') || '[]');
-    tasks = tasks.map(t => ({
-      id: t.id || Date.now() + Math.random(),
-      text: t.text || '',
-      dueDate: t.dueDate || null,
-      category: t.category || '',
-      priority: t.priority || 'normal',
-      done: t.done || false,
-      created: t.created || new Date().toISOString()
-    }));
+    firebaseApp = firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+
+    // Escuchar cambios en tiempo real → sincroniza entre dispositivos
+    db.ref('tasks').on('value', (snapshot) => {
+      const data = snapshot.val();
+      tasks = data ? Object.values(data).map(normalizeTask) : [];
+      tasks.sort((a,b) => new Date(a.dueDate||'9999') - new Date(b.dueDate||'9999'));
+      localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
+      renderAll();
+    });
+
+    db.ref('todos').on('value', (snapshot) => {
+      const data = snapshot.val();
+      todoItems = data ? Object.values(data).map(normalizeTodo) : [];
+      localStorage.setItem('agenda_julio_todos', JSON.stringify(todoItems));
+      renderAll();
+    });
+
+    console.log('Firebase conectado ✅');
+  } catch(e) {
+    console.warn('Firebase no disponible, usando localStorage:', e);
+    loadTasksLocal();
+    loadTodoItemsLocal();
+  }
+}
+
+function safeKey(id) {
+  // Firebase no acepta . en las keys
+  return String(id).replace(/[.#$/[\]]/g, '_');
+}
+
+function normalizeTask(t) {
+  return {
+    id: t.id || Date.now() + Math.random(),
+    text: t.text || '',
+    dueDate: t.dueDate || null,
+    category: t.category || '',
+    priority: t.priority || 'normal',
+    done: t.done || false,
+    created: t.created || new Date().toISOString()
+  };
+}
+
+function normalizeTodo(t) {
+  return {
+    id: t.id || Date.now() + Math.random(),
+    text: t.text || '',
+    category: t.category || '',
+    checked: t.checked || false,
+    created: t.created || new Date().toISOString()
+  };
+}
+
+function loadTasksLocal() {
+  try {
+    tasks = JSON.parse(localStorage.getItem('agenda_julio_tasks') || '[]').map(normalizeTask);
   } catch(e) { tasks = []; }
 }
 
-function saveTasks() {
-  localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
+function loadTodoItemsLocal() {
+  try {
+    todoItems = JSON.parse(localStorage.getItem('agenda_julio_todos') || '[]').map(normalizeTodo);
+  } catch(e) { todoItems = []; }
 }
 
-function loadTodoItems() {
-  try {
-    todoItems = JSON.parse(localStorage.getItem('agenda_julio_todos') || '[]');
-    todoItems = todoItems.map(t => ({
-      id: t.id || Date.now() + Math.random(),
-      text: t.text || '',
-      category: t.category || '',
-      checked: t.checked || false,
-      created: t.created || new Date().toISOString()
-    }));
-  } catch(e) { todoItems = []; }
+// Estas funciones se llaman igual que antes desde el resto del código
+function loadTasks() { /* manejado por listener Firebase */ }
+function loadTodoItems() { /* manejado por listener Firebase */ }
+
+function saveTasks() {
+  localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
+  if (!db) return;
+  const obj = {};
+  tasks.forEach(t => { obj[safeKey(t.id)] = t; });
+  db.ref('tasks').set(obj).catch(e => console.warn('Error guardando tasks:', e));
 }
 
 function saveTodoItems() {
   localStorage.setItem('agenda_julio_todos', JSON.stringify(todoItems));
+  if (!db) return;
+  const obj = {};
+  todoItems.forEach(t => { obj[safeKey(t.id)] = t; });
+  db.ref('todos').set(obj).catch(e => console.warn('Error guardando todos:', e));
 }
 
 function setDefaultDate() {
