@@ -370,7 +370,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.5</small>
+      <small>Recordatorios clínicos · v1.6</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -618,11 +618,11 @@ function setupSpeechRecognition() {
       if (!isListening) return; // parada manual — ya procesó stopRecording()
 
       if (isMobile) {
-        // Android: onend = terminó la frase → tomar el texto y cerrar
+        // Android: onend = terminó la frase → tomar el texto ANTES de stopListening()
+        // (stopListening limpia accumulatedText, por eso guardamos primero)
+        const text = accumulatedText.trim();
         isListening = false;
         stopListening();
-        const text = accumulatedText.trim();
-        accumulatedText = '';
         if (text) processVoiceInput(text);
       } else {
         // Desktop: auto-reiniciar para escucha continua
@@ -638,13 +638,11 @@ function setupSpeechRecognition() {
 }
 
 function stopRecording() {
-  // Función dedicada para el botón rojo en el modal — para sin condiciones
+  // Guardar texto ANTES de stopListening() que limpia las variables
+  const text = (committedText + accumulatedText).trim();
   isListening = false;
   try { recognition.abort(); } catch(e) {}
   stopListening();
-  const text = (committedText + accumulatedText).trim();
-  committedText = '';
-  accumulatedText = '';
   if (text) processVoiceInput(text);
 }
 
