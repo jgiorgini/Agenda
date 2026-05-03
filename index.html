@@ -370,7 +370,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.6</small>
+      <small>Recordatorios clínicos · v1.7</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -617,18 +617,12 @@ function setupSpeechRecognition() {
     r.onend = () => {
       if (!isListening) return; // parada manual — ya procesó stopRecording()
 
-      if (isMobile) {
-        // Android: onend = terminó la frase → tomar el texto ANTES de stopListening()
-        // (stopListening limpia accumulatedText, por eso guardamos primero)
-        const text = accumulatedText.trim();
-        isListening = false;
-        stopListening();
-        if (text) processVoiceInput(text);
-      } else {
-        // Desktop: auto-reiniciar para escucha continua
-        try { recognition.start(); }
-        catch(e) { isListening = false; stopListening(); }
-      }
+      // Tanto Android como desktop: acumular frase y reiniciar
+      // La diferencia es que Android usa continuous=false (una frase por sesión)
+      // pero igual queremos seguir escuchando hasta que el usuario toque Detener
+      accumulatedText += ''; // ya fue acumulado en onresult
+      try { recognition.start(); }
+      catch(e) { isListening = false; stopListening(); }
     };
 
     return r;
