@@ -472,8 +472,9 @@ let currentTaskType = 'agenda'; // 'agenda' | 'todo'
 let recognition = null;
 let isListening = false;
 let editingTaskId = null;
-let accumulatedText = '';  // texto de la sesión actual
-let committedText = '';    // texto de sesiones anteriores (auto-reinicios)
+let accumulatedText = '';    // texto de la sesión actual
+let committedText = '';      // texto de sesiones anteriores (auto-reinicios)
+let processedFinalCount = 0; // resultados finales ya procesados (fix Android)
 
 const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -592,15 +593,17 @@ function setupSpeechRecognition() {
 
   recognition.onresult = (e) => {
     let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    // Iterar desde processedFinalCount, NO desde e.resultIndex
+    // Android envía resultIndex=0 en cada evento → causa repeticiones
+    for (let i = processedFinalCount; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
       if (e.results[i].isFinal) {
         accumulatedText += t + ' ';
+        processedFinalCount = i + 1; // marcar como procesado
       } else {
         interim += t;
       }
     }
-    // committedText = sesiones previas, accumulatedText = sesión actual, interim = en curso
     const display = (committedText + accumulatedText + interim).trim();
     document.getElementById('transcriptionText').textContent = display || 'Hablá...';
     document.getElementById('transcriptionText').className = 'text' + (interim ? ' interim' : '');
@@ -621,9 +624,10 @@ function setupSpeechRecognition() {
   // onend: Chrome termina la sesión por silencio → reiniciar si el usuario sigue queriendo
   recognition.onend = () => {
     if (isListening) {
-      // Guardar texto de esta sesión antes de reiniciar (evita duplicados en Android)
+      // Guardar texto de esta sesión antes de reiniciar
       committedText += accumulatedText;
       accumulatedText = '';
+      processedFinalCount = 0; // nueva sesión = nuevo array de resultados
       try { recognition.start(); } catch(e) { isListening = false; stopListening(); }
     }
     // Si isListening=false: el usuario ya llamó stopRecording() que procesó el texto
@@ -666,11 +670,13 @@ function stopListening() {
   if (stopBtn) stopBtn.style.display = 'none';
   committedText = '';
   accumulatedText = '';
+  processedFinalCount = 0;
 }
 
 function openModalForVoice() {
   committedText = '';
   accumulatedText = '';
+  processedFinalCount = 0;
   document.getElementById('transcriptionText').textContent = 'Tocá ⏹️ cuando termines de hablar';
   document.getElementById('taskTextInput').value = '';
   document.getElementById('taskCategory').value = '';
