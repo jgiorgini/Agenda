@@ -1323,4 +1323,13 @@ function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTim
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !document.getElementById('modalOverlay').classList.contains('open')) { e.preventDefault(); toggleListening(); }
+  if (e.code === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>
