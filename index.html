@@ -110,7 +110,15 @@
     from { opacity: 0; transform: translateY(-8px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  .task-card.urgent { border-left-color: var(--danger); }
+  .task-card.urgent { background: #BF2B0D; border-left-color: #8B1A07; }
+  .task-card.urgent .task-text { color: white; }
+  .task-card.urgent .task-time { background: rgba(255,255,255,0.2); color: white; }
+  .task-card.urgent .task-cat { background: rgba(255,255,255,0.2); color: white; }
+  .task-card.urgent .task-actions { border-top-color: rgba(255,255,255,0.2); }
+  .task-card.urgent .btn-done { background: rgba(255,255,255,0.15); color: white; }
+  .task-card.urgent .btn-cal  { background: rgba(255,255,255,0.15); color: white; }
+  .task-card.urgent .btn-del  { background: rgba(0,0,0,0.2); color: white; }
+  .task-card.urgent .priority-dot { background: white; }
   .task-card.done { opacity: 0.55; border-left-color: var(--success); background: #F9FBF9; }
   .task-card.done .task-text { text-decoration: line-through; }
   .task-text { font-size: 0.95rem; font-weight: 600; line-height: 1.4; color: #1A237E; margin-bottom: 6px; padding-right: 30px; }
@@ -339,6 +347,10 @@
     animation: slideIn 0.25s ease; transition: all 0.2s;
   }
   .todo-item.done-item { opacity: 0.5; background: #F9FBF9; }
+  .todo-item.urgent-item { background: #BF2B0D; }
+  .todo-item.urgent-item .todo-item-text { color: white; }
+  .todo-item.urgent-item .todo-item-cat { background: rgba(255,255,255,0.2); color: white; }
+  .todo-item.urgent-item .todo-item-del { color: rgba(255,255,255,0.8); }
 
   .todo-checkbox {
     width: 24px; height: 24px; border-radius: 6px; border: 2.5px solid var(--border);
@@ -382,7 +394,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.9</small>
+      <small>Recordatorios clínicos · v1.10</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -458,13 +470,26 @@
       <input type="text" class="field-input" id="taskCategory" placeholder="ej: Paciente / Laboratorio / Admin">
     </div>
 
-    <!-- Solo visible en modo Agenda -->
+    <!-- Prioridad: visible en Agenda y To Do -->
     <div id="prioritySection" style="margin-bottom:14px">
       <div class="field-label">Prioridad</div>
       <div class="priority-row">
         <button class="priority-btn selected-normal" id="btnNormal" onclick="setPriority('normal')">🔵 Normal</button>
         <button class="priority-btn" id="btnUrgent" onclick="setPriority('urgent')">🔴 Urgente</button>
       </div>
+    </div>
+
+    <!-- Alarma: solo visible en modo Agenda -->
+    <div id="alarmSection" style="margin-bottom:14px">
+      <div class="field-label">🔔 Recordatorio</div>
+      <select class="field-input" id="taskAlarm" style="cursor:pointer">
+        <option value="0">Sin recordatorio</option>
+        <option value="10">10 minutos antes</option>
+        <option value="30" selected>30 minutos antes</option>
+        <option value="60">1 hora antes</option>
+        <option value="120">2 horas antes</option>
+        <option value="1440">1 día antes</option>
+      </select>
     </div>
 
     <button class="btn-primary" onclick="saveTask()">💾 Guardar</button>
@@ -576,6 +601,7 @@ function normalizeTodo(t) {
     id: t.id || Date.now() + Math.random(),
     text: t.text || '',
     category: t.category || '',
+    priority: t.priority || 'normal',
     checked: t.checked || false,
     created: t.created || new Date().toISOString()
   };
@@ -786,7 +812,8 @@ function setTaskType(type) {
   document.getElementById('btnTypeAgenda').className = 'type-btn' + (isTodo ? '' : ' active-agenda');
   document.getElementById('btnTypeTodo').className = 'type-btn' + (isTodo ? ' active-todo' : '');
   document.getElementById('dateTimeSection').style.display = isTodo ? 'none' : 'block';
-  document.getElementById('prioritySection').style.display = isTodo ? 'none' : 'block';
+  document.getElementById('prioritySection').style.display = 'block'; // visible siempre
+  document.getElementById('alarmSection').style.display = isTodo ? 'none' : 'block';
   document.getElementById('modalTitle').textContent = isTodo ? '☑️ Nueva tarea To Do' : '📅 Nueva tarea agenda';
 }
 
@@ -901,6 +928,7 @@ function saveTask() {
     const item = {
       id: Date.now() + Math.random(),
       text, category: cat, checked: false,
+      priority: currentPriority,
       created: new Date().toISOString()
     };
     todoItems.unshift(item);
@@ -926,10 +954,12 @@ function saveTask() {
     }
     showToast('✅ Tarea actualizada');
   } else {
+    const alarmMins = parseInt(document.getElementById('taskAlarm').value || '0');
     const task = {
       id: Date.now() + Math.random(),
       text, dueDate: dueDate?.toISOString() || null,
       category: cat, priority: currentPriority,
+      alarm: alarmMins,
       done: false, created: new Date().toISOString()
     };
     tasks.unshift(task);
@@ -1141,7 +1171,7 @@ function renderTodo(container) {
 
 function createTodoItemEl(item) {
   const el = document.createElement('div');
-  el.className = 'todo-item' + (item.checked ? ' done-item' : '');
+  el.className = 'todo-item' + (item.checked ? ' done-item' : '') + (item.priority === 'urgent' && !item.checked ? ' urgent-item' : '');
 
   const cb = document.createElement('div');
   cb.className = 'todo-checkbox' + (item.checked ? ' checked' : '');
@@ -1392,19 +1422,18 @@ function exportAllTasks() {
 // ========================
 function scheduleNotification(task) {
   if (!task.dueDate || Notification.permission !== 'granted') return;
+  const alarmMins = task.alarm != null ? task.alarm : 30;
+  if (alarmMins === 0) return; // sin recordatorio
   const due = new Date(task.dueDate).getTime();
   const now = Date.now();
-  const diff = due - now;
-  const notifTime = diff - 30 * 60 * 1000;
+  const notifTime = due - now - alarmMins * 60 * 1000;
+  const label = alarmMins >= 1440 ? '1 día' : alarmMins >= 60 ? (alarmMins/60)+'h' : alarmMins+' min';
   if (notifTime > 0) {
     setTimeout(() => {
-      new Notification('🔔 Recordatorio en 30 min', { body: task.text, tag: String(task.id) });
+      new Notification('🔔 En ' + label + ': ' + task.text.substring(0,50),
+        { body: task.category ? 'Categoría: ' + task.category : 'Agenda Dr. Julio',
+          tag: String(task.id), requireInteraction: true });
     }, notifTime);
-  }
-  if (diff > 0 && diff < 24 * 60 * 60 * 1000) {
-    setTimeout(() => {
-      new Notification('⏰ Tarea pendiente', { body: task.text, tag: String(task.id)+'_due', requireInteraction: true });
-    }, diff);
   }
 }
 
