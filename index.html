@@ -394,7 +394,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.10</small>
+      <small>Recordatorios clínicos · v1.11</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -490,6 +490,13 @@
         <option value="120">2 horas antes</option>
         <option value="1440">1 día antes</option>
       </select>
+    </div>
+
+    <!-- Alarma To Do: hora exacta, solo visible en modo To Do -->
+    <div id="todoAlarmSection" style="margin-bottom:14px;display:none">
+      <div class="field-label">🔔 Recordarme hoy a las</div>
+      <input type="time" class="field-input" id="todoAlarmTime" value="">
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">Dejalo vacío para no poner alarma</div>
     </div>
 
     <button class="btn-primary" onclick="saveTask()">💾 Guardar</button>
@@ -602,6 +609,7 @@ function normalizeTodo(t) {
     text: t.text || '',
     category: t.category || '',
     priority: t.priority || 'normal',
+    alarmTime: t.alarmTime || '',
     checked: t.checked || false,
     created: t.created || new Date().toISOString()
   };
@@ -782,6 +790,7 @@ function openModalForVoice() {
   committedText = '';
   accumulatedText = '';
   processedFinalCount = 0;
+  document.getElementById('todoAlarmTime').value = '';
   document.getElementById('transcriptionText').textContent = 'Tocá ⏹️ cuando termines de hablar';
   document.getElementById('taskTextInput').value = '';
   document.getElementById('taskCategory').value = '';
@@ -814,6 +823,7 @@ function setTaskType(type) {
   document.getElementById('dateTimeSection').style.display = isTodo ? 'none' : 'block';
   document.getElementById('prioritySection').style.display = 'block'; // visible siempre
   document.getElementById('alarmSection').style.display = isTodo ? 'none' : 'block';
+  document.getElementById('todoAlarmSection').style.display = isTodo ? 'block' : 'none';
   document.getElementById('modalTitle').textContent = isTodo ? '☑️ Nueva tarea To Do' : '📅 Nueva tarea agenda';
 }
 
@@ -925,15 +935,18 @@ function saveTask() {
 
   // Branch: To Do
   if (currentTaskType === 'todo') {
+    const todoAlarmTime = document.getElementById('todoAlarmTime').value || '';
     const item = {
       id: Date.now() + Math.random(),
       text, category: cat, checked: false,
       priority: currentPriority,
+      alarmTime: todoAlarmTime,
       created: new Date().toISOString()
     };
     todoItems.unshift(item);
     saveTodoItems();
-    showToast('☑️ Agregado a To Do');
+    if (todoAlarmTime) scheduleTodoAlarm(item);
+    showToast('☑️ Agregado a To Do' + (todoAlarmTime ? ' · 🔔 ' + todoAlarmTime : ''));
     closeModal();
     if (currentTab !== 'todo') switchTab('todo');
     else renderAll();
@@ -1188,13 +1201,23 @@ function createTodoItemEl(item) {
   textEl.onclick = () => toggleTodoItem(item.id);
   body.appendChild(textEl);
 
-  if (item.category) {
+  if (item.category || item.alarmTime) {
     const meta = document.createElement('div');
     meta.className = 'todo-item-meta';
-    const cat = document.createElement('span');
-    cat.className = 'todo-item-cat';
-    cat.textContent = item.category;
-    meta.appendChild(cat);
+    if (item.category) {
+      const cat = document.createElement('span');
+      cat.className = 'todo-item-cat';
+      cat.textContent = item.category;
+      meta.appendChild(cat);
+    }
+    if (item.alarmTime && !item.checked) {
+      const alm = document.createElement('span');
+      alm.className = 'todo-item-cat';
+      alm.style.background = item.priority === 'urgent' ? 'rgba(255,255,255,0.25)' : '#FFF3E0';
+      alm.style.color = item.priority === 'urgent' ? 'white' : '#E65100';
+      alm.textContent = '🔔 ' + item.alarmTime;
+      meta.appendChild(alm);
+    }
     body.appendChild(meta);
   }
   el.appendChild(body);
@@ -1420,6 +1443,21 @@ function exportAllTasks() {
 // ========================
 // NOTIFICATIONS
 // ========================
+function scheduleTodoAlarm(item) {
+  if (!item.alarmTime || Notification.permission !== 'granted') return;
+  const [hh, mm] = item.alarmTime.split(':').map(Number);
+  const now = new Date();
+  const alarm = new Date();
+  alarm.setHours(hh, mm, 0, 0);
+  const diff = alarm.getTime() - now.getTime();
+  if (diff <= 0) return; // ya pasó la hora hoy
+  setTimeout(() => {
+    new Notification('🔔 Recordatorio: ' + item.text.substring(0, 60),
+      { body: item.category ? 'Categoría: ' + item.category : 'Lista To Do',
+        tag: 'todo_' + String(item.id), requireInteraction: true });
+  }, diff);
+}
+
 function scheduleNotification(task) {
   if (!task.dueDate || Notification.permission !== 'granted') return;
   const alarmMins = task.alarm != null ? task.alarm : 30;
@@ -1440,6 +1478,7 @@ function scheduleNotification(task) {
 function scheduleReminderChecks() {
   if (Notification.permission === 'granted') {
     tasks.filter(t => !t.done && t.dueDate).forEach(scheduleNotification);
+    todoItems.filter(t => !t.checked && t.alarmTime).forEach(scheduleTodoAlarm);
   }
 }
 
