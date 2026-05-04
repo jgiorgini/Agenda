@@ -176,6 +176,15 @@
     background: white; padding: 3px 10px; border-radius: 12px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15); letter-spacing: 0.3px;
   }
+  .fab-row { display: flex; align-items: flex-end; gap: 14px; }
+  .fab-secondary {
+    width: 52px; height: 52px; border-radius: 50%; border: none;
+    background: white; color: var(--primary); font-size: 1.4rem; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(21,101,192,0.3); transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--primary);
+  }
+  .fab-secondary:active { transform: scale(0.92); }
 
   /* MODAL */
   .modal-overlay {
@@ -373,7 +382,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.8</small>
+      <small>Recordatorios clínicos · v1.9</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -393,10 +402,13 @@
   </div>
 </div>
 
-<!-- FAB BUTTON -->
+<!-- FAB BUTTONS -->
 <div class="fab-container">
-  <button class="fab" id="micBtn" onclick="toggleListening()">🎤</button>
-  <div class="fab-label" id="fabLabel">Dictá una tarea</div>
+  <div class="fab-row">
+    <button class="fab-secondary" onclick="openModalManual()" title="Escribir tarea">✏️</button>
+    <button class="fab" id="micBtn" onclick="toggleListening()">🎤</button>
+  </div>
+  <div class="fab-label" id="fabLabel">Dictá o escribí una tarea</div>
 </div>
 
 <!-- MODAL NUEVA TAREA -->
@@ -1349,10 +1361,21 @@ function downloadICS(content, filename) {
 }
 
 function exportOneTask(task) {
-  const ics = generateICS([task]);
-  const name = task.text.substring(0,30).replace(/[^\w\s]/g,'').trim().replace(/\s+/g,'_');
-  downloadICS(ics, 'tarea_' + name + '.ics');
-  showToast('📅 Descargando para Google Calendar...');
+  if (!task.dueDate) {
+    showToast('Esta tarea no tiene fecha/hora');
+    return;
+  }
+  // Abrir Google Calendar directamente (sin descargar archivo)
+  const start = new Date(task.dueDate);
+  const end = new Date(start.getTime() + 30 * 60000);
+  const fmt = d => d.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: task.text,
+    dates: fmt(start) + '/' + fmt(end),
+    details: (task.category ? 'Categoría: ' + task.category + '\n' : '') + 'Agenda Dr. Julio',
+  });
+  window.open('https://calendar.google.com/calendar/render?' + params.toString(), '_blank');
 }
 
 function exportAllTasks() {
