@@ -394,7 +394,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.11</small>
+      <small>Recordatorios clínicos · v1.12</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -665,7 +665,7 @@ async function setupServiceWorker() {
 
 function checkNotificationPermission() {
   if (!('Notification' in window)) return;
-  if (Notification.permission === 'default') {
+  if (Notification.permission !== 'granted') {
     document.getElementById('notifBanner').classList.remove('hidden');
   }
 }
@@ -674,8 +674,10 @@ async function requestNotifications() {
   const perm = await Notification.requestPermission();
   if (perm === 'granted') {
     document.getElementById('notifBanner').classList.add('hidden');
-    showToast('🔔 Notificaciones activadas');
+    showToast('🔔 Notificaciones activadas ✅');
     scheduleReminderChecks();
+  } else {
+    showToast('⚠️ Permiso denegado — activalo en Configuración del navegador');
   }
 }
 
@@ -1443,6 +1445,21 @@ function exportAllTasks() {
 // ========================
 // NOTIFICATIONS
 // ========================
+// Mostrar notificación via Service Worker (compatible con Android Chrome)
+function showNotif(title, body, tag) {
+  if (Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.showNotification(title, { body, tag, requireInteraction: true,
+        icon: 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22><rect width=%22192%22 height=%22192%22 rx=%2224%22 fill=%22%231565C0%22/><text y=%22130%22 x=%2230%22 font-size=%22120%22>📋</text></svg>' });
+    }).catch(() => {
+      new Notification(title, { body, tag, requireInteraction: true });
+    });
+  } else {
+    new Notification(title, { body, tag, requireInteraction: true });
+  }
+}
+
 function scheduleTodoAlarm(item) {
   if (!item.alarmTime || Notification.permission !== 'granted') return;
   const [hh, mm] = item.alarmTime.split(':').map(Number);
@@ -1450,27 +1467,27 @@ function scheduleTodoAlarm(item) {
   const alarm = new Date();
   alarm.setHours(hh, mm, 0, 0);
   const diff = alarm.getTime() - now.getTime();
-  if (diff <= 0) return; // ya pasó la hora hoy
+  if (diff <= 0) return;
   setTimeout(() => {
-    new Notification('🔔 Recordatorio: ' + item.text.substring(0, 60),
-      { body: item.category ? 'Categoría: ' + item.category : 'Lista To Do',
-        tag: 'todo_' + String(item.id), requireInteraction: true });
+    showNotif('🔔 ' + item.text.substring(0, 60),
+      item.category ? 'Categoría: ' + item.category : 'Lista To Do',
+      'todo_' + String(item.id));
   }, diff);
 }
 
 function scheduleNotification(task) {
   if (!task.dueDate || Notification.permission !== 'granted') return;
   const alarmMins = task.alarm != null ? task.alarm : 30;
-  if (alarmMins === 0) return; // sin recordatorio
+  if (alarmMins === 0) return;
   const due = new Date(task.dueDate).getTime();
   const now = Date.now();
   const notifTime = due - now - alarmMins * 60 * 1000;
   const label = alarmMins >= 1440 ? '1 día' : alarmMins >= 60 ? (alarmMins/60)+'h' : alarmMins+' min';
   if (notifTime > 0) {
     setTimeout(() => {
-      new Notification('🔔 En ' + label + ': ' + task.text.substring(0,50),
-        { body: task.category ? 'Categoría: ' + task.category : 'Agenda Dr. Julio',
-          tag: String(task.id), requireInteraction: true });
+      showNotif('🔔 En ' + label + ': ' + task.text.substring(0,50),
+        task.category ? 'Categoría: ' + task.category : 'Agenda Dr. Julio',
+        String(task.id));
     }, notifTime);
   }
 }
