@@ -386,6 +386,7 @@
 </style>
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
@@ -394,7 +395,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.12</small>
+      <small>Recordatorios clínicos · v1.13</small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -562,23 +563,30 @@ function initFirebase() {
     firebaseApp = firebase.initializeApp(firebaseConfig);
     db = firebase.database();
 
-    // Escuchar cambios en tiempo real → sincroniza entre dispositivos
-    db.ref('tasks').on('value', (snapshot) => {
-      const data = snapshot.val();
-      tasks = data ? Object.values(data).map(normalizeTask) : [];
-      tasks.sort((a,b) => new Date(a.dueDate||'9999') - new Date(b.dueDate||'9999'));
-      localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
-      renderAll();
-    });
+    // Autenticar anónimamente antes de leer/escribir
+    firebase.auth().signInAnonymously().then(() => {
+      // Escuchar cambios en tiempo real → sincroniza entre dispositivos
+      db.ref('tasks').on('value', (snapshot) => {
+        const data = snapshot.val();
+        tasks = data ? Object.values(data).map(normalizeTask) : [];
+        tasks.sort((a,b) => new Date(a.dueDate||'9999') - new Date(b.dueDate||'9999'));
+        localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
+        renderAll();
+      });
 
-    db.ref('todos').on('value', (snapshot) => {
-      const data = snapshot.val();
-      todoItems = data ? Object.values(data).map(normalizeTodo) : [];
-      localStorage.setItem('agenda_julio_todos', JSON.stringify(todoItems));
-      renderAll();
-    });
+      db.ref('todos').on('value', (snapshot) => {
+        const data = snapshot.val();
+        todoItems = data ? Object.values(data).map(normalizeTodo) : [];
+        localStorage.setItem('agenda_julio_todos', JSON.stringify(todoItems));
+        renderAll();
+      });
 
-    console.log('Firebase conectado ✅');
+      console.log('Firebase conectado ✅');
+    }).catch(e => {
+      console.warn('Firebase auth error, usando localStorage:', e);
+      loadTasksLocal();
+      loadTodoItemsLocal();
+    });
   } catch(e) {
     console.warn('Firebase no disponible, usando localStorage:', e);
     loadTasksLocal();
