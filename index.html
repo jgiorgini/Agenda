@@ -383,6 +383,7 @@
     white-space: nowrap; pointer-events: none;
   }
   .toast.show { opacity: 1; }
+  .sync-badge { cursor: default; font-size: 0.85em; }
 </style>
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -395,7 +396,7 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.13</small>
+      <small>Recordatorios clínicos · v1.14 <span id="syncBadge" class="sync-badge" title="Conectando...">⏳</span></small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
@@ -558,6 +559,21 @@ const firebaseConfig = {
 let firebaseApp = null;
 let db = null;
 
+function updateSyncStatus(state, detail) {
+  const el = document.getElementById('syncBadge');
+  if (!el) return;
+  const map = {
+    connecting: ['⏳', 'Conectando a la nube...'],
+    online: ['🟢', 'Sincronizado con la nube'],
+    offline: ['🟡', 'Sin conexión a internet (cambios solo locales por ahora)'],
+    error: ['🔴', 'Sin sincronización: ' + (detail || 'error desconocido')]
+  };
+  const [icon, title] = map[state] || map.error;
+  el.textContent = icon;
+  el.title = title;
+  if (state === 'error') showToast('⚠️ No se pudo sincronizar: ' + (detail || 'ver detalle'));
+}
+
 function initFirebase() {
   try {
     firebaseApp = firebase.initializeApp(firebaseConfig);
@@ -565,6 +581,11 @@ function initFirebase() {
 
     // Autenticar anónimamente antes de leer/escribir
     firebase.auth().signInAnonymously().then(() => {
+      // Refleja el estado real de la conexión (útil para detectar fallas silenciosas)
+      db.ref('.info/connected').on('value', (snap) => {
+        updateSyncStatus(snap.val() === true ? 'online' : 'offline');
+      });
+
       // Escuchar cambios en tiempo real → sincroniza entre dispositivos
       db.ref('tasks').on('value', (snapshot) => {
         const data = snapshot.val();
@@ -572,6 +593,9 @@ function initFirebase() {
         tasks.sort((a,b) => new Date(a.dueDate||'9999') - new Date(b.dueDate||'9999'));
         localStorage.setItem('agenda_julio_tasks', JSON.stringify(tasks));
         renderAll();
+      }, (e) => {
+        console.warn('Error leyendo tasks de Firebase:', e);
+        updateSyncStatus('error', e.message || e.code);
       });
 
       db.ref('todos').on('value', (snapshot) => {
@@ -579,16 +603,21 @@ function initFirebase() {
         todoItems = data ? Object.values(data).map(normalizeTodo) : [];
         localStorage.setItem('agenda_julio_todos', JSON.stringify(todoItems));
         renderAll();
+      }, (e) => {
+        console.warn('Error leyendo todos de Firebase:', e);
+        updateSyncStatus('error', e.message || e.code);
       });
 
       console.log('Firebase conectado ✅');
     }).catch(e => {
       console.warn('Firebase auth error, usando localStorage:', e);
+      updateSyncStatus('error', e.code || e.message);
       loadTasksLocal();
       loadTodoItemsLocal();
     });
   } catch(e) {
     console.warn('Firebase no disponible, usando localStorage:', e);
+    updateSyncStatus('error', e.message);
     loadTasksLocal();
     loadTodoItemsLocal();
   }
@@ -644,7 +673,10 @@ function saveTasks() {
   if (!db) return;
   const obj = {};
   tasks.forEach(t => { obj[safeKey(t.id)] = t; });
-  db.ref('tasks').set(obj).catch(e => console.warn('Error guardando tasks:', e));
+  db.ref('tasks').set(obj).catch(e => {
+    console.warn('Error guardando tasks:', e);
+    updateSyncStatus('error', e.message || e.code);
+  });
 }
 
 function saveTodoItems() {
@@ -652,7 +684,10 @@ function saveTodoItems() {
   if (!db) return;
   const obj = {};
   todoItems.forEach(t => { obj[safeKey(t.id)] = t; });
-  db.ref('todos').set(obj).catch(e => console.warn('Error guardando todos:', e));
+  db.ref('todos').set(obj).catch(e => {
+    console.warn('Error guardando todos:', e);
+    updateSyncStatus('error', e.message || e.code);
+  });
 }
 
 function setDefaultDate() {
