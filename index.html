@@ -117,6 +117,7 @@
   .task-card.urgent .task-actions { border-top-color: rgba(255,255,255,0.2); }
   .task-card.urgent .btn-done { background: rgba(255,255,255,0.15); color: white; }
   .task-card.urgent .btn-cal  { background: rgba(255,255,255,0.15); color: white; }
+  .task-card.urgent .btn-zoom { background: rgba(255,255,255,0.15); color: white; }
   .task-card.urgent .btn-del  { background: rgba(0,0,0,0.2); color: white; }
   .task-card.urgent .priority-dot { background: white; }
   .task-card.done { opacity: 0.55; border-left-color: var(--success); background: #F9FBF9; }
@@ -143,6 +144,8 @@
   .btn-done:hover, .btn-done:active { background: var(--success); color: white; }
   .btn-cal { background: #E3F2FD; color: var(--primary); }
   .btn-cal:hover, .btn-cal:active { background: var(--primary); color: white; }
+  .btn-zoom { background: #EDE7F6; color: #5E35B1; }
+  .btn-zoom:hover, .btn-zoom:active { background: #5E35B1; color: white; }
   .btn-del { background: #FFEBEE; color: var(--danger); }
   .btn-del:hover, .btn-del:active { background: var(--danger); color: white; }
   .task-card .priority-dot {
@@ -396,12 +399,13 @@
 <div class="header">
   <div class="header-top">
     <h1>📋 Agenda Dr. Julio
-      <small>Recordatorios clínicos · v1.14 <span id="syncBadge" class="sync-badge" title="Conectando...">⏳</span></small>
+      <small>Recordatorios clínicos · v1.15 <span id="syncBadge" class="sync-badge" title="Conectando...">⏳</span></small>
     </h1>
     <span class="badge hidden" id="pendingBadge">0</span>
   </div>
   <div class="tabs">
     <button class="tab active" onclick="switchTab('pending')">Agenda</button>
+    <button class="tab" onclick="switchTab('zoom')">Zoom</button>
     <button class="tab" onclick="switchTab('todo')">To Do</button>
     <button class="tab" onclick="switchTab('today')">Hoy</button>
     <button class="tab" onclick="switchTab('done')">Hechas</button>
@@ -470,6 +474,15 @@
     <div class="field-group">
       <label class="field-label">Categoría (opcional)</label>
       <input type="text" class="field-input" id="taskCategory" placeholder="ej: Paciente / Laboratorio / Admin">
+    </div>
+
+    <!-- Zoom: solo visible en modo Agenda -->
+    <div class="field-group" id="zoomSection">
+      <label class="field-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="taskIsZoom" onchange="onZoomCheckboxChange()" style="width:18px;height:18px">
+        🎥 Consulta por Zoom
+      </label>
+      <input type="url" class="field-input" id="taskZoomLink" placeholder="Link de la reunión (opcional)" style="display:none;margin-top:8px">
     </div>
 
     <!-- Prioridad: visible en Agenda y To Do -->
@@ -636,6 +649,8 @@ function normalizeTask(t) {
     category: t.category || '',
     priority: t.priority || 'normal',
     done: t.done || false,
+    isZoom: t.isZoom || false,
+    zoomLink: t.zoomLink || '',
     created: t.created || new Date().toISOString()
   };
 }
@@ -839,6 +854,7 @@ function openModalForVoice() {
   document.getElementById('transcriptionText').textContent = 'Tocá ⏹️ cuando termines de hablar';
   document.getElementById('taskTextInput').value = '';
   document.getElementById('taskCategory').value = '';
+  resetZoomFields();
   setPriority('normal');
   setDefaultDate();
   editingTaskId = null;
@@ -850,11 +866,27 @@ function openModalManual() {
   document.getElementById('transcriptionText').textContent = '(sin reconocimiento de voz)';
   document.getElementById('taskTextInput').value = '';
   document.getElementById('taskCategory').value = '';
+  resetZoomFields();
   setPriority('normal');
   setDefaultDate();
   editingTaskId = null;
-  setTaskType(currentTab === 'todo' ? 'todo' : 'agenda');
+  setTaskType(currentTab === 'zoom' ? 'agenda' : (currentTab === 'todo' ? 'todo' : 'agenda'));
+  if (currentTab === 'zoom') {
+    document.getElementById('taskIsZoom').checked = true;
+    onZoomCheckboxChange();
+  }
   document.getElementById('modalOverlay').classList.add('open');
+}
+
+function resetZoomFields() {
+  document.getElementById('taskIsZoom').checked = false;
+  document.getElementById('taskZoomLink').value = '';
+  document.getElementById('taskZoomLink').style.display = 'none';
+}
+
+function onZoomCheckboxChange() {
+  const checked = document.getElementById('taskIsZoom').checked;
+  document.getElementById('taskZoomLink').style.display = checked ? 'block' : 'none';
 }
 
 // ========================
@@ -868,6 +900,7 @@ function setTaskType(type) {
   document.getElementById('dateTimeSection').style.display = isTodo ? 'none' : 'block';
   document.getElementById('prioritySection').style.display = 'block'; // visible siempre
   document.getElementById('alarmSection').style.display = isTodo ? 'none' : 'block';
+  document.getElementById('zoomSection').style.display = isTodo ? 'none' : 'block';
   document.getElementById('todoAlarmSection').style.display = isTodo ? 'block' : 'none';
   document.getElementById('modalTitle').textContent = isTodo ? '☑️ Nueva tarea To Do' : '📅 Nueva tarea agenda';
 }
@@ -887,6 +920,10 @@ function processVoiceInput(text) {
     }
   }
   if (text.toLowerCase().includes('urgente')) setPriority('urgent');
+  if (text.toLowerCase().includes('zoom')) {
+    document.getElementById('taskIsZoom').checked = true;
+    onZoomCheckboxChange();
+  }
   const catMatch = text.match(/paciente|laboratorio|lab|turno|receta|resultado|familiar|guardia/i);
   if (catMatch) {
     const catMap = { paciente:'Paciente', laboratorio:'Laboratorio', lab:'Laboratorio',
@@ -1003,12 +1040,14 @@ function saveTask() {
   const timeVal = document.getElementById('taskTime').value;
   let dueDate = null;
   if (dateVal) dueDate = new Date(dateVal + 'T' + (timeVal || '09:00') + ':00');
+  const isZoom = document.getElementById('taskIsZoom').checked;
+  const zoomLink = document.getElementById('taskZoomLink').value.trim();
 
   if (editingTaskId) {
     const idx = tasks.findIndex(t => t.id === editingTaskId);
     if (idx >= 0) {
       tasks[idx] = { ...tasks[idx], text, dueDate: dueDate?.toISOString()||null,
-        category: cat, priority: currentPriority };
+        category: cat, priority: currentPriority, isZoom, zoomLink };
     }
     showToast('✅ Tarea actualizada');
   } else {
@@ -1017,11 +1056,11 @@ function saveTask() {
       id: Date.now() + Math.random(),
       text, dueDate: dueDate?.toISOString() || null,
       category: cat, priority: currentPriority,
-      alarm: alarmMins,
+      alarm: alarmMins, isZoom, zoomLink,
       done: false, created: new Date().toISOString()
     };
     tasks.unshift(task);
-    showToast('✅ Tarea guardada');
+    showToast(isZoom ? '🎥 Consulta Zoom guardada' : '✅ Tarea guardada');
     scheduleNotification(task);
   }
 
@@ -1132,9 +1171,24 @@ function renderAll() {
   content.querySelector('.notif-banner').id = 'notifBanner';
 
   if (currentTab === 'pending') renderPending(content);
+  else if (currentTab === 'zoom') renderZoom(content);
   else if (currentTab === 'todo') renderTodo(content);
   else if (currentTab === 'today') renderToday(content);
   else renderDone(content);
+}
+
+function renderZoom(container) {
+  const zoomTasks = tasks.filter(t => t.isZoom && !t.done)
+    .sort((a,b) => new Date(a.dueDate||'9999') - new Date(b.dueDate||'9999'));
+
+  if (zoomTasks.length === 0) {
+    container.appendChild(createEmpty('🎥', 'Sin consultas por Zoom programadas.\nDictá o escribí una tarea y marcá "Consulta por Zoom".'));
+    return;
+  }
+  const h = document.createElement('div');
+  h.className = 'section-title'; h.textContent = '🎥 Consultas por Zoom';
+  container.appendChild(h);
+  zoomTasks.forEach(t => container.appendChild(createCard(t)));
 }
 
 function renderPending(container) {
@@ -1353,6 +1407,12 @@ function createCard(task) {
     cat.textContent = task.category;
     meta.appendChild(cat);
   }
+  if (task.isZoom) {
+    const zoomTag = document.createElement('span');
+    zoomTag.className = 'task-cat';
+    zoomTag.textContent = '🎥 Zoom';
+    meta.appendChild(zoomTag);
+  }
   card.appendChild(meta);
   const actions = document.createElement('div');
   actions.className = 'task-actions';
@@ -1361,6 +1421,13 @@ function createCard(task) {
   btnDone.innerHTML = task.done ? '↩️ Pendiente' : '✅ Hecho';
   btnDone.onclick = () => markDone(task.id);
   actions.appendChild(btnDone);
+  if (task.isZoom) {
+    const btnZoom = document.createElement('button');
+    btnZoom.className = 'btn-action btn-zoom';
+    btnZoom.innerHTML = '🎥 Unirse';
+    btnZoom.onclick = () => joinZoom(task);
+    actions.appendChild(btnZoom);
+  }
   if (task.dueDate) {
     const btnCal = document.createElement('button');
     btnCal.className = 'btn-action btn-cal';
@@ -1375,6 +1442,11 @@ function createCard(task) {
   actions.appendChild(btnDel);
   card.appendChild(actions);
   return card;
+}
+
+function joinZoom(task) {
+  if (!task.zoomLink) { showToast('⚠️ Esta consulta no tiene link de Zoom guardado'); return; }
+  window.open(task.zoomLink, '_blank');
 }
 
 function createEmpty(emoji, msg) {
@@ -1403,7 +1475,7 @@ function createExportBar(pending) {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab').forEach((el, i) => {
-    el.classList.toggle('active', ['pending','todo','today','done'][i] === tab);
+    el.classList.toggle('active', ['pending','zoom','todo','today','done'][i] === tab);
   });
   renderAll();
 }
